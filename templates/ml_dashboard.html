@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Dashboard - Autonomous Driving</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .nav-buttons {
+            text-align: center;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        .nav-buttons a {
+            background: white;
+            color: #667eea;
+            padding: 12px 25px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+        }
+
+        .nav-buttons a:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px rgba(0,0,0,0.3);
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .panel h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: white;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-train {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        }
+
+        .btn-start-auto {
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+        }
+
+        .btn-stop-auto {
+            background: linear-gradient(135deg, #f44336 0%, #da190b 100%);
+        }
+
+        .status-box {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .status-box h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+        }
+
+        .status-badge {
+            padding: 5px 10px;
+            border-radius: 12px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .badge-success {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .badge-danger {
+            background: #f44336;
+            color: white;
+        }
+
+        .badge-warning {
+            background: #FF9800;
+            color: white;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #555;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+
+        .progress-container {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #ddd;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .prediction-display {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        .prediction-direction {
+            font-size: 3em;
+            font-weight: bold;
+            color: #667eea;
+            margin: 10px 0;
+        }
+
+        .prediction-confidence {
+            font-size: 1.2em;
+            color: #666;
+        }
+
+        .chart-container {
+            margin-top: 20px;
+            height: 300px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 ML Dashboard - Autonomous Driving</h1>
+
+        <div class="nav-buttons">
+            <a href="/">← Back to Control</a>
+            <a href="/gallery">🖼️ View Gallery</a>
+        </div>
+
+        <div class="main-grid">
+            <!-- Model Training Panel -->
+            <div class="panel">
+                <h2>Model Training</h2>
+
+                <div class="status-box">
+                    <h3>Model Status</h3>
+                    <div class="status-item">
+                        <span>Model Trained:</span>
+                        <span id="model-status" class="status-badge badge-danger">Not Trained</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Last Training Accuracy:</span>
+                        <span id="last-accuracy">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Total Images:</span>
+                        <span id="total-training-images">0</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="model-name">Model Name:</label>
+                    <input type="text" id="model-name" value="direction_model" placeholder="Enter model name">
+                </div>
+
+                <div class="form-group">
+                    <label for="epochs">Training Epochs:</label>
+                    <input type="number" id="epochs" value="10" min="1" max="100">
+                </div>
+
+                <div class="form-group">
+                    <label for="batch-size">Batch Size:</label>
+                    <input type="number" id="batch-size" value="32" min="8" max="128" step="8">
+                </div>
+
+                <button class="btn-train" onclick="startTraining()" id="btn-train">
+                    🎓 Start Training
+                </button>
+
+                <div id="training-progress" class="progress-container">
+                    <h3>Training in Progress...</h3>
+                    <p id="training-status">Initializing...</p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill">0%</div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <canvas id="training-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- Autonomous Driving Panel -->
+            <div class="panel">
+                <h2>Autonomous Driving</h2>
+
+                <div class="status-box">
+                    <h3>Autonomous Mode Status</h3>
+                    <div class="status-item">
+                        <span>Mode:</span>
+                        <span id="auto-status" class="status-badge badge-danger">Stopped</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Server Connection:</span>
+                        <span id="server-status" class="status-badge badge-danger">Disconnected</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="model-select">Select Model:</label>
+                    <select id="model-select" style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 8px; font-size: 1em;">
+                        <option value="">Loading models...</option>
+                    </select>
+                </div>
+
+                <button class="btn-start-auto" onclick="startAutonomous()" id="btn-start-auto">
+                    🚗 Start Autonomous Mode
+                </button>
+
+                <button class="btn-stop-auto" onclick="stopAutonomous()" id="btn-stop-auto" style="display: none;">
+                    🛑 Stop Autonomous Mode
+                </button>
+
+                <div class="prediction-display" id="prediction-display" style="display: none;">
+                    <h3>Current Prediction</h3>
+                    <div class="prediction-direction" id="prediction-direction">-</div>
+                    <div class="prediction-confidence">
+                        Confidence: <span id="prediction-confidence">-</span>%
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <small>Command: <strong id="prediction-command">-</strong></small>
+                    </div>
+                </div>
+
+                <div class="status-box" style="margin-top: 20px;">
+                    <h3>Instructions</h3>
+                    <p style="color: #666; line-height: 1.6;">
+                        1. First, collect training data by manually driving the car<br>
+                        2. Train the model using the training panel<br>
+                        3. Connect to the car server<br>
+                        4. Start autonomous mode to let the AI drive
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let trainingChart = null;
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            checkModelStatus();
+            checkServerStatus();
+            setupSocketListeners();
+            loadAvailableModels();
+        });
+
+        function setupSocketListeners() {
+            socket.on('training_complete', function(data) {
+                console.log('Training complete:', data);
+                document.getElementById('training-progress').style.display = 'none';
+                document.getElementById('btn-train').disabled = false;
+                showNotification('Training completed successfully!', 'success');
+                checkModelStatus();
+                updateTrainingChart(data);
+                loadAvailableModels();  // Reload model list
+            });
+
+            socket.on('training_error', function(data) {
+                console.error('Training error:', data);
+                document.getElementById('training-progress').style.display = 'none';
+                document.getElementById('btn-train').disabled = false;
+                showNotification('Training failed: ' + data.error, 'error');
+            });
+
+            socket.on('autonomous_prediction', function(data) {
+                console.log('Autonomous prediction:', data);
+                updatePredictionDisplay(data);
+            });
+        }
+
+        async function loadAvailableModels() {
+            try {
+                const response = await fetch('/list_models');
+                const data = await response.json();
+
+                const modelSelect = document.getElementById('model-select');
+                modelSelect.innerHTML = '';
+
+                if (data.models && data.models.length > 0) {
+                    data.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.name;
+
+                        let label = model.name;
+                        if (model.accuracy) {
+                            label += ` (${(model.accuracy * 100).toFixed(1)}% accuracy)`;
+                        }
+                        option.textContent = label;
+
+                        modelSelect.appendChild(option);
+                    });
+
+                    showNotification(`Loaded ${data.models.length} model(s)`, 'info');
+                } else {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'No models available - train a model first';
+                    modelSelect.appendChild(option);
+                }
+            } catch (error) {
+                console.error('Failed to load models:', error);
+                const modelSelect = document.getElementById('model-select');
+                modelSelect.innerHTML = '<option value="">Error loading models</option>';
+            }
+        }
+
+        async function checkModelStatus() {
+            try {
+                const response = await fetch('/model_status');
+                const data = await response.json();
+
+                if (data.model_exists) {
+                    document.getElementById('model-status').textContent = 'Trained';
+                    document.getElementById('model-status').className = 'status-badge badge-success';
+
+                    if (data.training_history) {
+                        const lastAccuracy = data.training_history.val_accuracy[data.training_history.val_accuracy.length - 1];
+                        document.getElementById('last-accuracy').textContent = (lastAccuracy * 100).toFixed(2) + '%';
+
+                        // Update total images
+                        const counts = data.training_history.class_counts;
+                        const total = Object.values(counts).reduce((a, b) => a + b, 0);
+                        document.getElementById('total-training-images').textContent = total;
+
+                        updateTrainingChart(data.training_history);
+                    }
+                } else {
+                    document.getElementById('model-status').textContent = 'Not Trained';
+                    document.getElementById('model-status').className = 'status-badge badge-danger';
+                }
+            } catch (error) {
+                console.error('Failed to check model status:', error);
+            }
+        }
+
+        async function checkServerStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+
+                if (data.connected) {
+                    document.getElementById('server-status').textContent = 'Connected';
+                    document.getElementById('server-status').className = 'status-badge badge-success';
+                } else {
+                    document.getElementById('server-status').textContent = 'Disconnected';
+                    document.getElementById('server-status').className = 'status-badge badge-danger';
+                }
+            } catch (error) {
+                console.error('Failed to check server status:', error);
+            }
+
+            // Check again in 5 seconds
+            setTimeout(checkServerStatus, 5000);
+        }
+
+        async function startTraining() {
+            const modelName = document.getElementById('model-name').value.trim();
+            const epochs = parseInt(document.getElementById('epochs').value);
+            const batchSize = parseInt(document.getElementById('batch-size').value);
+
+            if (!modelName) {
+                showNotification('Please enter a model name', 'error');
+                return;
+            }
+
+            if (!confirm(`Start training model "${modelName}" with ${epochs} epochs and batch size ${batchSize}?`)) {
+                return;
+            }
+
+            try {
+                document.getElementById('btn-train').disabled = true;
+                document.getElementById('training-progress').style.display = 'block';
+                document.getElementById('training-status').textContent = 'Preparing training data...';
+
+                const response = await fetch('/train_model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model_name: modelName,
+                        epochs,
+                        batch_size: batchSize
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('training-status').textContent = 'Training model... This may take several minutes.';
+                    showNotification(`Model "${modelName}" training started`, 'info');
+                } else {
+                    throw new Error(data.error || 'Training failed');
+                }
+            } catch (error) {
+                console.error('Training error:', error);
+                document.getElementById('training-progress').style.display = 'none';
+                document.getElementById('btn-train').disabled = false;
+                showNotification('Training error: ' + error.message, 'error');
+            }
+        }
+
+        async function startAutonomous() {
+            const modelSelect = document.getElementById('model-select');
+            const selectedModel = modelSelect.value;
+
+            if (!selectedModel) {
+                showNotification('Please select a model first', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/start_autonomous', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_name: selectedModel })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('auto-status').textContent = 'Running';
+                    document.getElementById('auto-status').className = 'status-badge badge-success';
+                    document.getElementById('btn-start-auto').style.display = 'none';
+                    document.getElementById('btn-stop-auto').style.display = 'block';
+                    document.getElementById('prediction-display').style.display = 'block';
+                    showNotification(`Autonomous mode started with "${selectedModel}"`, 'success');
+                } else {
+                    throw new Error(data.error || 'Failed to start autonomous mode');
+                }
+            } catch (error) {
+                console.error('Start autonomous error:', error);
+                showNotification('Error: ' + error.message, 'error');
+            }
+        }
+
+        async function stopAutonomous() {
+            try {
+                const response = await fetch('/stop_autonomous', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('auto-status').textContent = 'Stopped';
+                    document.getElementById('auto-status').className = 'status-badge badge-danger';
+                    document.getElementById('btn-start-auto').style.display = 'block';
+                    document.getElementById('btn-stop-auto').style.display = 'none';
+                    document.getElementById('prediction-display').style.display = 'none';
+                    showNotification('Autonomous mode stopped', 'success');
+                } else {
+                    throw new Error(data.error || 'Failed to stop autonomous mode');
+                }
+            } catch (error) {
+                console.error('Stop autonomous error:', error);
+                showNotification('Error: ' + error.message, 'error');
+            }
+        }
+
+        function updatePredictionDisplay(data) {
+            document.getElementById('prediction-direction').textContent = data.direction;
+            document.getElementById('prediction-confidence').textContent = (data.confidence * 100).toFixed(1);
+            document.getElementById('prediction-command').textContent = data.command;
+        }
+
+        function updateTrainingChart(history) {
+            const ctx = document.getElementById('training-chart').getContext('2d');
+
+            if (trainingChart) {
+                trainingChart.destroy();
+            }
+
+            const epochs = history.accuracy.map((_, i) => i + 1);
+
+            trainingChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: epochs,
+                    datasets: [
+                        {
+                            label: 'Training Accuracy',
+                            data: history.accuracy,
+                            borderColor: '#4CAF50',
+                            backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Validation Accuracy',
+                            data: history.val_accuracy,
+                            borderColor: '#2196F3',
+                            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Model Training History'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1
+                        }
+                    }
+                }
+            });
+        }
+
+        function showNotification(message, type = 'info') {
+            const colors = {
+                success: '#4CAF50',
+                error: '#f44336',
+                warning: '#FF9800',
+                info: '#2196F3'
+            };
+
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: ${colors[type] || colors.info};
+                color: white;
+                padding: 15px 25px;
+                border-radius: 8px;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+                z-index: 10000;
+                font-weight: bold;
+            `;
+            notification.textContent = message;
+
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                document.body.removeChild(notification);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

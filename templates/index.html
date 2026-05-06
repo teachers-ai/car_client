@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car FPV Client</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 20px;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .camera-section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .camera-container {
+            width: 100%;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .camera-container img {
+            width: 100%;
+            display: block;
+        }
+
+        .status-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+            background: rgba(0,0,0,0.7);
+            color: white;
+        }
+
+        .status-badge.connected {
+            background: rgba(76, 175, 80, 0.9);
+        }
+
+        .status-badge.disconnected {
+            background: rgba(244, 67, 54, 0.9);
+        }
+
+        .controls-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .control-group {
+            margin-bottom: 25px;
+        }
+
+        .control-group h3 {
+            color: #555;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        button {
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: white;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f44336 0%, #da190b 100%);
+        }
+
+        .btn-control {
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+            font-size: 1.2em;
+        }
+
+        .btn-stop {
+            background: linear-gradient(135deg, #FF5722 0%, #E64A19 100%);
+            grid-column: 2;
+            font-size: 1.3em;
+        }
+
+        .direction-controls {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            max-width: 250px;
+            margin: 0 auto;
+        }
+
+        .direction-controls button {
+            padding: 20px;
+            font-size: 1.5em;
+        }
+
+        .direction-controls button:nth-child(1) {
+            grid-column: 2;
+        }
+
+        .direction-controls button:nth-child(2) {
+            grid-column: 1;
+        }
+
+        .direction-controls button:nth-child(3) {
+            grid-column: 2;
+        }
+
+        .direction-controls button:nth-child(4) {
+            grid-column: 3;
+        }
+
+        .speed-control {
+            margin-top: 15px;
+        }
+
+        .speed-input-group {
+            margin-bottom: 15px;
+        }
+
+        .speed-input-group label {
+            display: block;
+            color: #555;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .speed-slider {
+            width: 100%;
+            margin-bottom: 5px;
+        }
+
+        .speed-value {
+            text-align: center;
+            color: #667eea;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
+        .connections-list {
+            margin-top: 20px;
+        }
+
+        .connection-item {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .connection-item.controlling {
+            background: linear-gradient(135deg, #FFD54F 0%, #FFC107 100%);
+            color: white;
+        }
+
+        .connection-info {
+            flex: 1;
+        }
+
+        .connection-sid {
+            font-family: monospace;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .connection-item.controlling .connection-sid {
+            color: rgba(255,255,255,0.8);
+        }
+
+        .btn-drop {
+            background: linear-gradient(135deg, #FF5722 0%, #E64A19 100%);
+            padding: 8px 15px;
+            font-size: 0.9em;
+        }
+
+        .info-box {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196F3;
+        }
+
+        .info-box p {
+            color: #1976D2;
+            margin: 5px 0;
+            font-size: 0.95em;
+        }
+
+        .keyboard-hint {
+            background: #fff3e0;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #FF9800;
+        }
+
+        .keyboard-hint p {
+            color: #F57C00;
+            font-size: 0.85em;
+            margin: 3px 0;
+        }
+
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .connection-panel {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+
+        .connection-form {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-group label {
+            color: #555;
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .input-group input {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn-connect {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            color: white;
+            transition: all 0.3s;
+        }
+
+        .btn-connect:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .btn-disconnect {
+            background: linear-gradient(135deg, #f44336 0%, #da190b 100%);
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            color: white;
+            transition: all 0.3s;
+        }
+
+        .btn-disconnect:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .connection-status-text {
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .connection-status-text.connected {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .connection-status-text.disconnected {
+            background: #ffcdd2;
+            color: #c62828;
+        }
+
+        @media (max-width: 768px) {
+            .connection-form {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .btn-capture {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            background: linear-gradient(135deg, #FF6B6B 0%, #FF5252 100%);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 1em;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+            transition: all 0.3s;
+        }
+
+        .btn-capture:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+        }
+
+        .captured-images-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .image-item {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .image-item img {
+            width: 80px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+
+        .image-info {
+            flex: 1;
+        }
+
+        .image-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .tag {
+            background: #667eea;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+        }
+
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10001;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+
+        .modal-content h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Car FPV Client Control</h1>
+
+        <div style="text-align: center; margin-bottom: 20px;">
+            <a href="/gallery" style="background: white; color: #667eea; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; box-shadow: 0 5px 15px rgba(0,0,0,0.2); transition: all 0.3s; display: inline-block;">
+                🖼️ View Image Gallery
+            </a>
+        </div>
+
+        <!-- Connection Panel -->
+        <div class="panel connection-panel">
+            <h2 style="color: #333; margin-bottom: 15px;">Server Connection</h2>
+            <div class="connection-form">
+                <div class="input-group">
+                    <label for="server-ip">Server IP Address</label>
+                    <input type="text" id="server-ip" placeholder="192.168.12.147" value="192.168.12.147">
+                </div>
+                <div class="input-group">
+                    <label for="server-port">Port</label>
+                    <input type="number" id="server-port" placeholder="5000" value="5000" min="1" max="65535">
+                </div>
+                <button class="btn-connect" onclick="connectToServer()" id="btn-connect">Connect</button>
+                <button class="btn-disconnect" onclick="disconnectFromServer()" id="btn-disconnect" style="display: none;">Disconnect</button>
+            </div>
+            <div id="connection-status-text" class="connection-status-text disconnected">
+                Not connected to car server
+            </div>
+
+            <!-- Controller Status -->
+            <div style="margin-top: 15px; padding: 10px; background: #f5f5f5; border-radius: 8px; display: none;" id="controller-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <strong style="color: #333;">Controller Status:</strong>
+                    <span id="controller-status" style="font-weight: bold; color: #f44336;">Not Controlling</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <button class="btn-primary" onclick="takeControl()" id="btn-take-control" style="padding: 10px; font-size: 0.9em;">
+                        🎮 Take Control
+                    </button>
+                    <button class="btn-secondary" onclick="releaseControl()" id="btn-release-control" style="padding: 10px; font-size: 0.9em;">
+                        🚫 Release Control
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="panel camera-section">
+                <h2 style="color: #333; margin-bottom: 20px;">Live Camera Feed</h2>
+                <div class="camera-container">
+                    <img id="camera-feed" src="/camera" alt="Camera Feed">
+                    <div id="connection-status" class="status-badge disconnected">Disconnected</div>
+                    <button class="btn-capture" onclick="captureImage()">📷 Capture Image</button>
+                </div>
+
+                <div class="info-box">
+                    <p id="server-info"><strong>Server:</strong> <span id="current-server">Not connected</span></p>
+                    <p id="connection-info"><strong>Status:</strong> <span id="connection-info-text">Disconnected</span></p>
+                </div>
+
+                <div class="control-group">
+                    <h3>Direction Controls</h3>
+                    <div class="direction-controls">
+                        <button class="btn-control" onclick="sendCommand('F')" id="btn-forward">↑</button>
+                        <button class="btn-control" onclick="sendCommand('L')" id="btn-left">←</button>
+                        <button class="btn-stop" onclick="sendCommand('S')" id="btn-stop">STOP</button>
+                        <button class="btn-control" onclick="sendCommand('R')" id="btn-right">→</button>
+                        <button class="btn-control" onclick="sendCommand('B')" id="btn-back" style="grid-column: 2;">↓</button>
+                    </div>
+                    <div class="keyboard-hint">
+                        <p><strong>Keyboard Controls:</strong></p>
+                        <p>↑/W: Forward | ↓/S: Backward | ←/A: Left | →/D: Right | Space: Stop</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel controls-section">
+                <h2>Control Panel</h2>
+
+                <div class="control-group">
+                    <h3>Speed Settings</h3>
+                    <div class="speed-control">
+                        <div class="speed-input-group">
+                            <label for="movement-speed">Movement Speed</label>
+                            <input type="range" id="movement-speed" class="speed-slider"
+                                   min="0" max="100" value="50" oninput="updateSpeedDisplay()">
+                            <div class="speed-value" id="movement-speed-value">50%</div>
+                        </div>
+                        <div class="speed-input-group">
+                            <label for="rotation-speed">Rotation Speed</label>
+                            <input type="range" id="rotation-speed" class="speed-slider"
+                                   min="0" max="100" value="50" oninput="updateSpeedDisplay()">
+                            <div class="speed-value" id="rotation-speed-value">50%</div>
+                        </div>
+                        <button class="btn-primary" onclick="setSpeed()" style="width: 100%;">
+                            Apply Speed Settings
+                        </button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>Active Connections</h3>
+                    <div id="connections-list" class="connections-list">
+                        <p style="color: #999; text-align: center;">No connections</p>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>Captured Images (<span id="image-count">0</span>)</h3>
+                    <div id="captured-images-list" class="captured-images-list">
+                        <p style="color: #999; text-align: center;">No images captured</p>
+                    </div>
+                </div>
+
+                <!-- Model Training Section -->
+                <div class="control-group">
+                    <h3>🎓 Model Training</h3>
+                    <div style="background: #f5f5f5; padding: 10px; border-radius: 8px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; padding: 3px 0;">
+                            <span style="font-size: 0.85em;">Model Status:</span>
+                            <span id="model-status" style="font-size: 0.85em; font-weight: bold; color: #f44336;">Not Trained</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 3px 0;">
+                            <span style="font-size: 0.85em;">Accuracy:</span>
+                            <span id="last-accuracy" style="font-size: 0.85em;">-</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 10px;">
+                        <label style="display: block; font-size: 0.85em; margin-bottom: 5px; color: #555;">Model Name:</label>
+                        <input type="text" id="model-name" value="direction_model"
+                               style="width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 5px; font-size: 0.9em;">
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div>
+                            <label style="display: block; font-size: 0.85em; margin-bottom: 5px; color: #555;">Epochs:</label>
+                            <input type="number" id="epochs" value="10" min="1" max="100"
+                                   style="width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 5px; font-size: 0.9em;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; margin-bottom: 5px; color: #555;">Batch Size:</label>
+                            <input type="number" id="batch-size" value="32" min="8" max="128" step="8"
+                                   style="width: 100%; padding: 8px; border: 2px; border-radius: 5px; font-size: 0.9em;">
+                        </div>
+                    </div>
+
+                    <button class="btn-primary" onclick="startTraining()" id="btn-train" style="width: 100%; background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);">
+                        🎓 Start Training
+                    </button>
+
+                    <div id="training-progress" style="display: none; background: #f5f5f5; padding: 10px; border-radius: 8px; margin-top: 10px;">
+                        <p id="training-status" style="font-size: 0.85em; margin-bottom: 5px;">Training...</p>
+                        <div style="width: 100%; height: 20px; background: #ddd; border-radius: 10px; overflow: hidden;">
+                            <div id="progress-fill" style="height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); width: 0%; transition: width 0.3s; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75em; font-weight: bold;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Autonomous Driving Section -->
+                <div class="control-group">
+                    <h3>🤖 Autonomous Mode</h3>
+                    <div style="background: #f5f5f5; padding: 10px; border-radius: 8px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; padding: 3px 0;">
+                            <span style="font-size: 0.85em;">Status:</span>
+                            <span id="auto-status" style="font-size: 0.85em; font-weight: bold; color: #f44336;">Stopped</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 10px;">
+                        <label style="display: block; font-size: 0.85em; margin-bottom: 5px; color: #555;">Select Model:</label>
+                        <select id="model-select" style="width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 5px; font-size: 0.9em;">
+                            <option value="">Loading models...</option>
+                        </select>
+                    </div>
+
+                    <button class="btn-primary" onclick="startAutonomous()" id="btn-start-auto" style="width: 100%; background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);">
+                        🚗 Start Autonomous
+                    </button>
+
+                    <button class="btn-primary" onclick="stopAutonomous()" id="btn-stop-auto" style="display: none; width: 100%; background: linear-gradient(135deg, #f44336 0%, #da190b 100%);">
+                        🛑 Stop Autonomous
+                    </button>
+
+                    <div id="prediction-display" style="display: none; background: #f5f5f5; padding: 10px; border-radius: 8px; margin-top: 10px; text-align: center;">
+                        <div style="font-size: 1.5em; font-weight: bold; color: #667eea;" id="prediction-direction">-</div>
+                        <div style="font-size: 0.85em; color: #666;">Confidence: <span id="prediction-confidence">-</span>%</div>
+                        <div style="font-size: 0.75em; margin-top: 5px;">Cmd: <strong id="prediction-command">-</strong></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tag Modal -->
+    <div id="tag-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>Add Tags to Image</h3>
+            <input type="text" id="tag-input" placeholder="Enter tags separated by commas" style="width: 100%; padding: 10px; margin: 10px 0; border: 2px solid #ddd; border-radius: 5px;">
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button class="btn-primary" onclick="saveTags()" style="flex: 1;">Save Tags</button>
+                <button class="btn-danger" onclick="closeTagModal()" style="flex: 1;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/control.js"></script>
+</body>
+</html>
