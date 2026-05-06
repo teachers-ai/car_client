@@ -231,6 +231,7 @@ def drop_client(sid):
 @app.route('/speed', methods=['POST'])
 def set_speed():
     """Set movement and rotation speed"""
+    global current_speed
     try:
         if not is_connected:
             return jsonify({'error': 'Not connected to server'}), 503
@@ -242,6 +243,13 @@ def set_speed():
         # Validate speed range
         if not (0.0 <= movement_speed <= 1.0) or not (0.0 <= rotation_speed <= 1.0):
             return jsonify({'error': 'Speed values must be between 0.0 and 1.0'}), 400
+
+        # Store speed settings globally for use in autonomous mode
+        current_speed = {
+            'movement_speed': movement_speed,
+            'rotation_speed': rotation_speed
+        }
+        logger.info(f'Speed settings updated: movement={movement_speed}, rotation={rotation_speed}')
 
         # Use correct API format: 'move_speed' and 'turn_speed'
         sio.emit('set_speed', {
@@ -757,13 +765,17 @@ def start_autonomous():
 
                                 cmd = direction_map.get(direction, 'S')
 
+                                # Use speed settings from UI (convert 0.0-1.0 to 0-100)
+                                movement_speed = int(current_speed['movement_speed'] * 100)
+                                turn_speed = int(current_speed['rotation_speed'] * 100)
+
                                 # Set speed based on direction
                                 if cmd == 'F':
-                                    speed = 60  # Forward movement speed
+                                    speed = movement_speed  # Use configured movement speed
                                     turn = 0
                                 elif cmd == 'L' or cmd == 'R':
-                                    speed = 50  # Slower speed when turning
-                                    turn = 50   # Turn speed
+                                    speed = movement_speed  # Use configured movement speed
+                                    turn = turn_speed       # Use configured turn speed
                                 else:
                                     speed = 0
                                     turn = 0
