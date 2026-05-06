@@ -757,13 +757,28 @@ def start_autonomous():
 
                                 cmd = direction_map.get(direction, 'S')
 
+                                # Set speed based on direction
+                                if cmd == 'F':
+                                    speed = 60  # Forward movement speed
+                                    turn = 0
+                                elif cmd == 'L' or cmd == 'R':
+                                    speed = 50  # Slower speed when turning
+                                    turn = 50   # Turn speed
+                                else:
+                                    speed = 0
+                                    turn = 0
+
                                 # Log prediction
                                 probs = prediction.get('probabilities', {})
-                                logger.info(f'🤖 AUTONOMOUS: {direction} ({confidence*100:.1f}%) → {cmd}')
+                                logger.info(f'🤖 AUTONOMOUS: {direction} ({confidence*100:.1f}%) → {cmd} (speed={speed}, turn={turn})')
 
-                                # Send command directly
-                                sio.emit('command', {'dir': cmd})
-                                logger.info(f'[cmd] {cmd}')
+                                # Send command with speed parameters
+                                sio.emit('command', {
+                                    'dir': cmd,
+                                    'speed': speed,
+                                    'turn': turn
+                                })
+                                logger.info(f'[cmd] {cmd} speed={speed} turn={turn}')
 
                                 # Broadcast prediction to UI
                                 flask_socketio.emit('autonomous_prediction', {
@@ -773,7 +788,11 @@ def start_autonomous():
                                 })
                             else:
                                 logger.info(f'⚠️  Low confidence ({confidence*100:.1f}%)')
-                                sio.emit('command', {'dir': 'S'})
+                                sio.emit('command', {
+                                    'dir': 'S',
+                                    'speed': 0,
+                                    'turn': 0
+                                })
                                 logger.info(f'[cmd] S (low confidence stop)')
 
                         time.sleep(0.5)  # Update every 500ms
@@ -787,7 +806,11 @@ def start_autonomous():
             finally:
                 # Ensure car is stopped and mode is reset even on errors
                 try:
-                    sio.emit('command', {'dir': 'S'})
+                    sio.emit('command', {
+                        'dir': 'S',
+                        'speed': 0,
+                        'turn': 0
+                    })
                     logger.info('Sent final STOP command')
                 except:
                     pass
