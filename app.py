@@ -740,7 +740,7 @@ def start_autonomous():
         autonomous_mode = True
 
         def autonomous_drive():
-            global autonomous_mode, latest_frame
+            global autonomous_mode, latest_frame, current_speed
             logger.info('Autonomous driving thread started')
 
             try:
