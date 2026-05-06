@@ -4,11 +4,9 @@ import numpy as np
 from PIL import Image
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras.applications import VGG16
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Conv2D, MaxPool2D, Flatten
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from sklearn.model_selection import train_test_split
 import json
 import logging
@@ -21,41 +19,36 @@ class DirectionModel:
         self.model_path = f'models/{model_name}.h5'
         self.history_path = f'models/{model_name}_history.json'
         self.model = None
-        self.class_names = ['Forward', 'Backward', 'Left', 'Right']
-        self.img_size = (224, 224)
+        # Match notebook: only 3 classes (Left, Forward, Right - no Backward)
+        self.class_names = ['Left', 'Forward', 'Right']
+        # Match notebook: 200x50 image size (width x height)
+        self.img_size = (200, 50)
 
         # Create models directory
         os.makedirs('models', exist_ok=True)
 
     def build_model(self):
-        """Build VGG16-based model for direction classification"""
-        # Load pre-trained VGG16 without top layers
-        base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+        """Build CNN model matching the notebook architecture"""
+        model = Sequential()
+        # Input shape is (height, width, channels) = (50, 200, 3)
+        model.add(Conv2D(input_shape=(50, 200, 3), filters=32, kernel_size=(3,3), padding="same", activation="relu"))
+        model.add(Conv2D(filters=16, kernel_size=(3,3), padding="same", activation="relu"))
+        model.add(MaxPool2D(pool_size=(2,2), strides=(2,2)))
+        model.add(Flatten())
+        model.add(Dense(units=250, activation="relu"))
+        model.add(Dense(units=100, activation="relu"))
+        model.add(Dense(units=3, activation="softmax"))  # 3 classes: L, F, R
 
-        # Freeze base model layers
-        for layer in base_model.layers:
-            layer.trainable = False
-
-        # Add custom top layers
-        x = base_model.output
-        x = GlobalAveragePooling2D()(x)
-        x = Dense(512, activation='relu')(x)
-        x = Dropout(0.5)(x)
-        x = Dense(256, activation='relu')(x)
-        x = Dropout(0.3)(x)
-        predictions = Dense(4, activation='softmax')(x)  # 4 directions
-
-        # Create final model
-        self.model = Model(inputs=base_model.input, outputs=predictions)
-
-        # Compile model
-        self.model.compile(
-            optimizer=Adam(learning_rate=0.0001),
+        # Compile model with Adam optimizer (lr=0.001 as per notebook)
+        model.compile(
+            optimizer=Adam(learning_rate=0.001),
             loss='categorical_crossentropy',
             metrics=['accuracy']
         )
 
-        logger.info('VGG16 model built successfully')
+        self.model = model
+        logger.info('CNN model built successfully (200x50 input, 3 classes)')
+        self.model.summary()
         return self.model
 
     def load_images_from_folders(self, base_dir='captured_images'):
@@ -63,8 +56,16 @@ class DirectionModel:
         images = []
         labels = []
 
-        for label_idx, label_name in enumerate(self.class_names):
-            label_dir = os.path.join(base_dir, label_name)
+        # Map class names to label indices (matching notebook encoding)
+        # Left: [1,0,0], Forward: [0,1,0], Right: [0,0,1]
+        label_map = {
+            'Left': [1, 0, 0],
+            'Forward': [0, 1, 0],
+            'Right': [0, 0, 1]
+        }
+
+        for class_name in self.class_names:
+            label_dir = os.path.join(base_dir, class_name)
 
             if not os.path.exists(label_dir):
                 logger.warning(f'Directory not found: {label_dir}')
@@ -72,22 +73,18 @@ class DirectionModel:
 
             image_files = [f for f in os.listdir(label_dir) if f.endswith('.jpg')]
 
-            logger.info(f'Loading {len(image_files)} images from {label_name}')
+            logger.info(f'Loading {len(image_files)} images from {class_name}')
 
             for img_file in image_files:
                 img_path = os.path.join(label_dir, img_file)
                 try:
                     # Load and preprocess image
                     img = Image.open(img_path).convert('RGB')
-                    img = img.resize(self.img_size)
+                    img = img.resize(self.img_size)  # Resize to 200x50
                     img_array = np.array(img) / 255.0  # Normalize to 0-1
 
                     images.append(img_array)
-
-                    # One-hot encode label
-                    label = np.zeros(4)
-                    label[label_idx] = 1
-                    labels.append(label)
+                    labels.append(label_map[class_name])
 
                 except Exception as e:
                     logger.error(f'Error loading image {img_path}: {e}')
@@ -95,8 +92,8 @@ class DirectionModel:
 
         return np.array(images), np.array(labels)
 
-    def train(self, epochs=10, batch_size=32, validation_split=0.2):
-        """Train the model on captured images"""
+    def train(self, epochs=10, batch_size=16, validation_split=0.2):
+        """Train the model on captured images (matching notebook settings)"""
         logger.info('Starting model training...')
 
         # Load images
@@ -105,19 +102,19 @@ class DirectionModel:
         if len(X) == 0:
             raise ValueError('No training images found!')
 
-        logger.info(f'Loaded {len(X)} images')
+        logger.info(f'Loaded {len(X)} images with shape {X.shape}')
 
         # Count samples per class
         class_counts = {}
         for idx, class_name in enumerate(self.class_names):
-            count = np.sum(np.argmax(y, axis=1) == idx)
+            count = np.sum(y[:, idx] == 1)
             class_counts[class_name] = int(count)
 
         logger.info(f'Class distribution: {class_counts}')
 
-        # Split data
+        # Split data (80/20 split as per notebook)
         X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=validation_split, random_state=42, stratify=np.argmax(y, axis=1)
+            X, y, test_size=validation_split, random_state=42
         )
 
         logger.info(f'Training samples: {len(X_train)}, Validation samples: {len(X_val)}')
@@ -126,24 +123,16 @@ class DirectionModel:
         if self.model is None:
             self.build_model()
 
-        # Data augmentation
-        datagen = ImageDataGenerator(
-            rotation_range=10,
-            width_shift_range=0.1,
-            height_shift_range=0.1,
-            horizontal_flip=True,
-            zoom_range=0.1
-        )
-
-        # Train model
+        # Train model (no data augmentation, matching notebook)
         history = self.model.fit(
-            datagen.flow(X_train, y_train, batch_size=batch_size),
-            validation_data=(X_val, y_val),
+            X_train, y_train,
+            batch_size=batch_size,
             epochs=epochs,
+            validation_data=(X_val, y_val),
             verbose=1
         )
 
-        # Save model
+        # Save model as .h5 file (matching notebook)
         self.model.save(self.model_path)
         logger.info(f'Model saved to {self.model_path}')
 
@@ -184,7 +173,7 @@ class DirectionModel:
         else:
             img = Image.fromarray(image).convert('RGB')
 
-        img = img.resize(self.img_size)
+        img = img.resize(self.img_size)  # Resize to 200x50
         img_array = np.array(img) / 255.0
         img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
 
@@ -198,7 +187,7 @@ class DirectionModel:
             'confidence': confidence,
             'probabilities': {
                 self.class_names[i]: float(predictions[0][i])
-                for i in range(4)
+                for i in range(3)
             }
         }
 
