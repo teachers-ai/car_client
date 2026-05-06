@@ -43,6 +43,7 @@ ARCHIVE_DIR = 'archived_images'
 METADATA_FILE = 'captured_images/metadata.json'
 ARCHIVE_METADATA_FILE = 'archived_images/metadata.json'
 latest_frame = None
+auto_capture_enabled = False  # Toggle for auto-capture on movement
 
 # Create directory structure
 LABEL_DIRS = ['Forward', 'Backward', 'Left', 'Right', 'Manual']
@@ -340,10 +341,58 @@ def disconnect_route():
         return jsonify({'error': str(e)}), 500
 
 
+def _save_image_thread(frame_data, tags, timestamp, label):
+    """Background thread to save image (avoids blocking the main thread)"""
+    global image_metadata
+    try:
+        # Generate filename with timestamp
+        filename = f'capture_{timestamp}.jpg'
+
+        # Save in label-specific folder
+        label_dir = os.path.join(IMAGES_DIR, label)
+        if not os.path.exists(label_dir):
+            os.makedirs(label_dir)
+
+        filepath = os.path.join(label_dir, filename)
+        relative_path = os.path.join(label, filename)
+
+        # Convert bytes to PIL Image
+        img = Image.open(io.BytesIO(frame_data))
+
+        # Crop to bottom half of image
+        width, height = img.size
+        bottom_half = img.crop((0, height // 2, width, height))
+
+        # Save the cropped image
+        bottom_half.save(filepath, 'JPEG', quality=95)
+
+        # Save metadata
+        metadata_entry = {
+            'filename': filename,
+            'filepath': relative_path,
+            'label': label,
+            'timestamp': timestamp,
+            'tags': tags,
+            'datetime': datetime.now().isoformat(),
+            'archived': False,
+            'cropped': 'bottom_half'
+        }
+        image_metadata.append(metadata_entry)
+
+        # Save metadata to file
+        with open(METADATA_FILE, 'w') as f:
+            json.dump(image_metadata, f, indent=2)
+
+        logger.info(f'Image captured (bottom half): {filename} in {label} folder with tags: {tags}')
+
+    except Exception as e:
+        logger.error(f'Background image save error: {e}')
+
+
 @app.route('/capture_image', methods=['POST'])
 def capture_image():
-    """Capture current camera frame and save it"""
-    global latest_frame, image_metadata
+    """Capture current camera frame and save it (bottom half only, in background thread)"""
+    global latest_frame
     try:
         if latest_frame is None:
             return jsonify({'error': 'No camera frame available'}), 400
@@ -355,48 +404,47 @@ def capture_image():
         # Determine label/folder based on first tag
         label = tags[0] if tags else 'Manual'
 
-        # Generate filename with timestamp
+        # Generate timestamp now (before thread)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f'capture_{timestamp}.jpg'
 
-        # Save in label-specific folder
-        label_dir = os.path.join(IMAGES_DIR, label)
-        if not os.path.exists(label_dir):
-            os.makedirs(label_dir)
+        # Start background thread to save image (non-blocking)
+        capture_thread = threading.Thread(
+            target=_save_image_thread,
+            args=(latest_frame, tags, timestamp, label),
+            daemon=True
+        )
+        capture_thread.start()
 
-        filepath = os.path.join(label_dir, filename)
-        relative_path = os.path.join(label, filename)
-
-        # Save the image
-        with open(filepath, 'wb') as f:
-            f.write(latest_frame)
-
-        # Save metadata
-        metadata_entry = {
-            'filename': filename,
-            'filepath': relative_path,
-            'label': label,
-            'timestamp': timestamp,
-            'tags': tags,
-            'datetime': datetime.now().isoformat(),
-            'archived': False
-        }
-        image_metadata.append(metadata_entry)
-
-        # Save metadata to file
-        with open(METADATA_FILE, 'w') as f:
-            json.dump(image_metadata, f, indent=2)
-
-        logger.info(f'Image captured: {filename} in {label} folder with tags: {tags}')
+        # Return immediately without waiting for save to complete
+        logger.info(f'Started capture thread for: {filename} in {label} folder')
         return jsonify({
             'status': 'success',
             'filename': filename,
             'label': label,
-            'tags': tags
+            'tags': tags,
+            'cropped': 'bottom_half'
         })
 
     except Exception as e:
         logger.error(f'Capture image error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/auto_capture', methods=['GET', 'POST'])
+def toggle_auto_capture():
+    """Toggle or get auto-capture setting"""
+    global auto_capture_enabled
+    try:
+        if request.method == 'POST':
+            data = request.get_json() or {}
+            auto_capture_enabled = data.get('enabled', auto_capture_enabled)
+            logger.info(f'Auto-capture {"enabled" if auto_capture_enabled else "disabled"}')
+
+        return jsonify({'auto_capture_enabled': auto_capture_enabled})
+
+    except Exception as e:
+        logger.error(f'Auto-capture toggle error: {e}')
         return jsonify({'error': str(e)}), 500
 
 

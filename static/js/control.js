@@ -8,6 +8,7 @@ let serverConnected = false;
 
 // Image capture state
 let currentCaptureFilename = null;
+let autoCaptureEnabled = false;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -17,6 +18,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadCapturedImages();
     checkModelStatus();
     loadAvailableModels();
+    initAutoCapture();
 });
 
 // Setup Socket.IO event listeners
@@ -339,6 +341,12 @@ async function sendCommand(direction) {
 
 // Auto-capture image with direction tag
 async function autoCaptureWithTag(direction) {
+    // Check if auto-capture is enabled
+    if (!autoCaptureEnabled) {
+        console.log('Auto-capture disabled, skipping capture');
+        return;
+    }
+
     const directionNames = {
         'F': 'Forward',
         'B': 'Backward',
@@ -358,13 +366,63 @@ async function autoCaptureWithTag(direction) {
         const data = await response.json();
 
         if (response.ok) {
-            console.log('Auto-captured image with tag:', tag);
+            console.log('Auto-captured image with tag:', tag, '(bottom half)');
             loadCapturedImages(); // Refresh the image list
         } else {
             console.error('Auto-capture failed:', data.error);
         }
     } catch (error) {
         console.error('Auto-capture error:', error);
+    }
+}
+
+// Initialize auto-capture checkbox
+async function initAutoCapture() {
+    try {
+        // Get current auto-capture status from server
+        const response = await fetch('/auto_capture');
+        const data = await response.json();
+
+        autoCaptureEnabled = data.auto_capture_enabled || false;
+
+        // Set checkbox state
+        const checkbox = document.getElementById('auto-capture-toggle');
+        if (checkbox) {
+            checkbox.checked = autoCaptureEnabled;
+            // Add change event listener
+            checkbox.addEventListener('change', toggleAutoCapture);
+        }
+
+        console.log('Auto-capture initialized:', autoCaptureEnabled);
+    } catch (error) {
+        console.error('Failed to initialize auto-capture:', error);
+    }
+}
+
+// Toggle auto-capture on/off
+async function toggleAutoCapture(event) {
+    const enabled = event.target.checked;
+
+    try {
+        const response = await fetch('/auto_capture', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled })
+        });
+
+        const data = await response.json();
+        autoCaptureEnabled = data.auto_capture_enabled;
+
+        console.log('Auto-capture', autoCaptureEnabled ? 'enabled' : 'disabled');
+        showNotification(
+            `Auto-capture ${autoCaptureEnabled ? 'enabled' : 'disabled'} (bottom half)`,
+            'success'
+        );
+    } catch (error) {
+        console.error('Failed to toggle auto-capture:', error);
+        // Revert checkbox on error
+        event.target.checked = !enabled;
+        showNotification('Failed to toggle auto-capture', 'error');
     }
 }
 
