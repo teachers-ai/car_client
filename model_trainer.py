@@ -92,7 +92,7 @@ class DirectionModel:
 
         return np.array(images), np.array(labels)
 
-    def train(self, epochs=10, batch_size=16, validation_split=0.2):
+    def train(self, epochs=10, batch_size=16, validation_split=0.2, progress_callback=None):
         """Train the model on captured images (matching notebook settings)"""
         logger.info('Starting model training...')
 
@@ -123,12 +123,18 @@ class DirectionModel:
         if self.model is None:
             self.build_model()
 
+        # Prepare callbacks
+        callbacks = []
+        if progress_callback is not None:
+            callbacks.append(progress_callback)
+
         # Train model (no data augmentation, matching notebook)
         history = self.model.fit(
             X_train, y_train,
             batch_size=batch_size,
             epochs=epochs,
             validation_data=(X_val, y_val),
+            callbacks=callbacks,
             verbose=1
         )
 
@@ -162,7 +168,7 @@ class DirectionModel:
             return False
 
     def predict(self, image):
-        """Predict direction from image"""
+        """Predict direction from image (using bottom half only)"""
         if self.model is None:
             if not self.load_model():
                 raise ValueError('Model not loaded!')
@@ -172,6 +178,10 @@ class DirectionModel:
             img = Image.open(io.BytesIO(image)).convert('RGB')
         else:
             img = Image.fromarray(image).convert('RGB')
+
+        # Crop to bottom half (same as training data)
+        width, height = img.size
+        img = img.crop((0, height // 2, width, height))
 
         img = img.resize(self.img_size)  # Resize to 200x50
         img_array = np.array(img) / 255.0

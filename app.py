@@ -13,6 +13,7 @@ import time
 import io
 from PIL import Image
 import numpy as np
+import tensorflow as tf
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'car-client-secret-key'
@@ -623,6 +624,33 @@ def get_archived_images():
 
 # ML Model Training Endpoints
 
+class TrainingProgressCallback(tf.keras.callbacks.Callback):
+    """Custom Keras callback to emit training progress via Socket.IO"""
+    def __init__(self, total_epochs):
+        super().__init__()
+        self.total_epochs = total_epochs
+
+    def on_epoch_end(self, epoch, logs=None):
+        """Called at the end of each epoch"""
+        logs = logs or {}
+        progress_data = {
+            'epoch': epoch + 1,
+            'total_epochs': self.total_epochs,
+            'loss': float(logs.get('loss', 0)),
+            'accuracy': float(logs.get('accuracy', 0)),
+            'val_loss': float(logs.get('val_loss', 0)),
+            'val_accuracy': float(logs.get('val_accuracy', 0))
+        }
+
+        logger.info(f'Epoch {epoch + 1}/{self.total_epochs} - '
+                   f'loss: {progress_data["loss"]:.4f}, '
+                   f'acc: {progress_data["accuracy"]:.4f}, '
+                   f'val_loss: {progress_data["val_loss"]:.4f}, '
+                   f'val_acc: {progress_data["val_accuracy"]:.4f}')
+
+        # Emit progress to all connected clients
+        flask_socketio.emit('training_progress', progress_data)
+
 @app.route('/train_model', methods=['POST'])
 def train_model():
     """Train VGG16 model on captured images"""
@@ -643,7 +671,15 @@ def train_model():
         # Train in a separate thread to avoid blocking
         def train_async():
             try:
-                history = direction_model.train(epochs=epochs, batch_size=batch_size)
+                # Create progress callback
+                progress_callback = TrainingProgressCallback(total_epochs=epochs)
+
+                # Train with progress callback
+                history = direction_model.train(
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    progress_callback=progress_callback
+                )
                 logger.info(f'Model training completed successfully: {model_name}')
                 flask_socketio.emit('training_complete', history)
             except Exception as e:
@@ -748,11 +784,8 @@ def predict_direction():
             if not direction_model.load_model():
                 return jsonify({'error': 'Model not trained yet'}), 400
 
-        # Convert frame to image
-        img = Image.open(io.BytesIO(latest_frame))
-
-        # Predict
-        prediction = direction_model.predict(img)
+        # Predict - pass bytes directly (predict() will handle cropping internally)
+        prediction = direction_model.predict(latest_frame)
 
         return jsonify(prediction)
 
