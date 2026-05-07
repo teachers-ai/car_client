@@ -24,13 +24,14 @@ document.addEventListener('DOMContentLoaded', function() {
 // Setup Socket.IO event listeners
 function setupSocketListeners() {
     socket.on('connect', function() {
-        updateConnectionStatus(true);
-        console.log('Connected to client server');
+        // Don't update car server connection status here
+        // Socket.IO connects to Flask client, not the car server
+        console.log('Connected to Flask client server');
     });
 
     socket.on('disconnect', function() {
-        updateConnectionStatus(false);
-        console.log('Disconnected from client server');
+        // Don't update car server connection status here
+        console.log('Disconnected from Flask client server');
     });
 
     socket.on('connection_list', function(data) {
@@ -48,6 +49,11 @@ function setupSocketListeners() {
         console.log('Received speed update:', data);
         currentSpeed = data;
         updateSpeedSliders(data);
+    });
+
+    socket.on('training_progress', function(data) {
+        console.log('Training progress:', data);
+        updateTrainingProgress(data);
     });
 
     socket.on('training_complete', function(data) {
@@ -613,6 +619,24 @@ function showNotification(message, type = 'info') {
             document.body.removeChild(notification);
         }, 300);
     }, 3000);
+}
+
+// Update training progress display
+function updateTrainingProgress(data) {
+    const progressContainer = document.getElementById('training-progress');
+    const progressText = document.getElementById('training-status');
+
+    if (progressContainer) {
+        progressContainer.style.display = 'block';
+
+        // Update progress text with epoch metrics
+        if (progressText) {
+            const statusText = `Epoch ${data.epoch}/${data.total_epochs} - ` +
+                `Train Acc: ${(data.accuracy * 100).toFixed(2)}% | ` +
+                `Val Acc: ${(data.val_accuracy * 100).toFixed(2)}%`;
+            progressText.textContent = statusText;
+        }
+    }
 }
 
 // Keyboard controls

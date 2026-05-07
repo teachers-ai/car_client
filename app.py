@@ -129,6 +129,11 @@ def index():
 def camera():
     """Proxy the camera stream from the car server"""
     global latest_frame
+
+    # Check if connected before trying to fetch camera
+    if SERVER_URL is None or not is_connected:
+        return jsonify({'error': 'Not connected to car server'}), 503
+
     try:
         def generate():
             global latest_frame
@@ -451,9 +456,51 @@ def toggle_auto_capture():
 
 @app.route('/images', methods=['GET'])
 def list_images():
-    """Get list of captured images"""
+    """Get list of captured images (scans filesystem if metadata is empty or missing files)"""
+    global image_metadata
     try:
-        return jsonify({'images': image_metadata})
+        # Scan filesystem for images and sync with metadata
+        filesystem_images = {}
+        for label in LABEL_DIRS:
+            label_dir = os.path.join(IMAGES_DIR, label)
+            if os.path.exists(label_dir):
+                for filename in os.listdir(label_dir):
+                    if filename.endswith('.jpg'):
+                        filesystem_images[filename] = {
+                            'filename': filename,
+                            'filepath': os.path.join(label, filename),
+                            'label': label,
+                            'timestamp': filename.replace('capture_', '').replace('.jpg', ''),
+                            'tags': [label],
+                            'datetime': None,
+                            'archived': False,
+                            'cropped': 'bottom_half'
+                        }
+
+        # Build merged list: prefer metadata entries, add missing files from filesystem
+        merged_images = []
+        metadata_filenames = {entry['filename'] for entry in image_metadata}
+
+        # Add all metadata entries
+        for entry in image_metadata:
+            if entry['filename'] in filesystem_images:
+                merged_images.append(entry)
+            # If metadata entry exists but file doesn't, skip it
+
+        # Add files that exist but aren't in metadata
+        for filename, file_info in filesystem_images.items():
+            if filename not in metadata_filenames:
+                merged_images.append(file_info)
+                logger.info(f'Found orphaned image on filesystem: {filename}')
+
+        # Update in-memory metadata with complete list
+        image_metadata = merged_images
+
+        # Save updated metadata
+        with open(METADATA_FILE, 'w') as f:
+            json.dump(image_metadata, f, indent=2)
+
+        return jsonify({'images': merged_images})
     except Exception as e:
         logger.error(f'List images error: {e}')
         return jsonify({'error': str(e)}), 500
@@ -580,16 +627,24 @@ def delete_images():
         deleted_count = 0
 
         for filename in filenames:
-            # Find and delete the image
-            for entry in image_metadata:
-                if entry['filename'] == filename:
-                    filepath = os.path.join(IMAGES_DIR, entry['filepath'])
+            # Search for file in all label directories (regardless of metadata)
+            file_deleted = False
+            for label in LABEL_DIRS:
+                label_dir = os.path.join(IMAGES_DIR, label)
+                filepath = os.path.join(label_dir, filename)
 
-                    if os.path.exists(filepath):
+                if os.path.exists(filepath):
+                    try:
                         os.remove(filepath)
                         deleted_count += 1
+                        file_deleted = True
+                        logger.info(f'Deleted image: {filepath}')
+                        break
+                    except Exception as e:
+                        logger.error(f'Failed to delete {filepath}: {e}')
 
-                    break
+            if not file_deleted:
+                logger.warning(f'Image not found on filesystem: {filename}')
 
         # Remove deleted entries from metadata
         image_metadata = [entry for entry in image_metadata if entry['filename'] not in filenames]
@@ -598,7 +653,7 @@ def delete_images():
         with open(METADATA_FILE, 'w') as f:
             json.dump(image_metadata, f, indent=2)
 
-        logger.info(f'Deleted {deleted_count} images')
+        logger.info(f'Deleted {deleted_count} images from filesystem, cleaned metadata')
         return jsonify({'status': 'success', 'deleted_count': deleted_count})
 
     except Exception as e:
@@ -835,7 +890,7 @@ def start_autonomous():
                             confidence = prediction['confidence']
 
                             # Only act if confidence is above threshold
-                            if confidence > 0.6:
+                            if confidence > 0.4:
                                 # Map direction to command
                                 direction_map = {
                                     'Forward': 'F',
@@ -963,8 +1018,16 @@ def connect_to_server():
 
 def disconnect_from_server():
     """Disconnect from the car server"""
-    global is_connected, my_session_id, am_i_controlling
+    global is_connected, my_session_id, am_i_controlling, autonomous_mode, autonomous_thread
     try:
+        # Stop autonomous mode if running
+        if autonomous_mode:
+            logger.info('Stopping autonomous mode before disconnect...')
+            autonomous_mode = False
+            if autonomous_thread and autonomous_thread.is_alive():
+                autonomous_thread.join(timeout=2)
+            logger.info('Autonomous mode stopped')
+
         if sio.connected:
             logger.info('Disconnecting from car server...')
             # Release control before disconnecting (stops the car)
@@ -1010,15 +1073,16 @@ def get_server_address():
 
     args = parser.parse_args()
 
-    SERVER_HOST = f"{args.server}:{args.port}"
-    SERVER_URL = f"http://{SERVER_HOST}"
+    # Don't set SERVER_URL here - let the user connect via UI
+    # The default server address is just for display purposes
 
     print("\n" + "="*70)
     print("Car FPV Client - Configuration")
     print("="*70)
-    print(f"Car Server:    {SERVER_URL}")
+    print(f"Car Server:    Not connected (use UI to connect)")
     print(f"Client Port:   {args.client_port}")
-    print(f"\nTo change server: python app.py --server <IP> --port <PORT>")
+    print(f"\nDefault server: {args.server}:{args.port}")
+    print(f"To change defaults: python app.py --server <IP> --port <PORT>")
     print(f"Or set environment variables: CAR_SERVER and CAR_PORT")
     print("="*70 + "\n")
 

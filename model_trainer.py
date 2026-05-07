@@ -119,9 +119,8 @@ class DirectionModel:
 
         logger.info(f'Training samples: {len(X_train)}, Validation samples: {len(X_val)}')
 
-        # Build model if not exists
-        if self.model is None:
-            self.build_model()
+        # Always rebuild model to avoid optimizer variable conflicts
+        self.build_model()
 
         # Prepare callbacks
         callbacks = []
